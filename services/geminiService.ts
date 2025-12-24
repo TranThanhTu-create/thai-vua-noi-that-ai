@@ -1,27 +1,35 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { RoomType, DesignStyle } from "../types";
 
-const API_KEY = process.env.API_KEY || '';
+// ✅ ĐÚNG CHO VITE + VERCEL
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
+// ✅ CHECK SỚM – TRÁNH BUILD / RUNTIME FAIL
+if (!API_KEY) {
+  throw new Error("❌ Missing VITE_GEMINI_API_KEY. Check Vercel Environment Variables.");
+}
+
+/**
+ * Hàm hỗ trợ tạo thiết kế với cơ chế thử lại (retry)
+ */
 const generateWithRetry = async (
-  ai: any,
+  ai: GoogleGenAI,
   roomImageBase64: string,
   prompt: string,
   maxRetries: number = 2
 ): Promise<{ imageUrl: string; description: string } | null> => {
   let lastError = null;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: "gemini-2.5-flash-image",
         contents: {
           parts: [
             {
               inlineData: {
-                data: roomImageBase64.split(',')[1],
-                mimeType: 'image/png',
+                data: roomImageBase64.split(",")[1],
+                mimeType: "image/png",
               },
             },
             { text: prompt },
@@ -29,13 +37,13 @@ const generateWithRetry = async (
         },
         config: {
           imageConfig: {
-            aspectRatio: "16:9", // Chuyển sang tỉ lệ 16:9 toàn cảnh
-          }
-        }
+            aspectRatio: "16:9", // Giữ nguyên tỉ lệ 16:9
+          },
+        },
       });
 
-      let imageUrl = '';
-      let description = '';
+      let imageUrl = "";
+      let description = "";
 
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) {
@@ -51,9 +59,11 @@ const generateWithRetry = async (
     } catch (error) {
       lastError = error;
       console.error(`Lỗi tại lần thử ${attempt + 1}:`, error);
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
+
+  console.error("Gemini retry failed:", lastError);
   return null;
 };
 
@@ -67,30 +77,33 @@ export const generateInteriorDesigns = async (
 ): Promise<{ imageUrl: string; description: string }[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
   const finalResults: { imageUrl: string; description: string }[] = [];
-  
+
   const variations = [
     "Tập trung vào sự sang trọng, sử dụng vật liệu cao cấp như đá marble và gỗ óc chó.",
     "Tối ưu không gian mở, ánh sáng tự nhiên và bố cục tối giản, thanh lịch.",
-    "Tạo không gian ấm cúng với tone màu trung tính, đèn decor nghệ thuật và cây xanh lọc không khí."
+    "Tạo không gian ấm cúng với tone màu trung tính, đèn decor nghệ thuật và cây xanh lọc không khí.",
   ];
 
   for (let i = 0; i < count; i++) {
     const variationPrompt = variations[i % variations.length];
+
     const prompt = `YÊU CẦU THIẾT KẾ NỘI THẤT CAO CẤP (PHƯƠNG ÁN ${i + 1}):
-    1. HIỆN TRẠNG: Dựa trên ảnh chụp căn phòng thực tế được đính kèm.
-    2. NHIỆM VỤ: Thiết kế nội thất cho ${roomType} theo phong cách ${style}.
-    3. YÊU CẦU RIÊNG CỦA KHÁCH HÀNG: "${requirements || 'Thiết kế đẹp, sang trọng và tối ưu công năng'}". AI PHẢI TUÂN THỦ NGHIÊM NGẶT YÊU CẦU NÀY.
-    4. QUY TẮC HIỂN THỊ: SỬ DỤNG TỈ LỆ 16:9 (NGANG). Phải tạo góc nhìn toàn cảnh (Wide-angle) để khách hàng thấy được sự biến đổi của toàn bộ không gian phòng theo chiều ngang.
-    5. CHẤT LƯỢNG: Ảnh photorealistic 8K, cực kỳ sắc nét. Nội thất phải chân thực, ánh sáng ấm áp, hài hòa.
-    6. ĐIỂM NHẤN RIÊNG: ${variationPrompt}
-    7. NGÔN NGỮ: Mô tả chi tiết các vật liệu và ý tưởng kiến tạo không gian bằng Tiếng Việt.`;
+1. HIỆN TRẠNG: Dựa trên ảnh chụp căn phòng thực tế được đính kèm.
+2. NHIỆM VỤ: Thiết kế nội thất cho ${roomType} theo phong cách ${style}.
+3. YÊU CẦU RIÊNG CỦA KHÁCH HÀNG: "${requirements || "Thiết kế đẹp, sang trọng và tối ưu công năng"}". AI PHẢI TUÂN THỦ NGHIÊM NGẶT YÊU CẦU NÀY.
+4. QUY TẮC HIỂN THỊ: SỬ DỤNG TỈ LỆ 16:9 (NGANG). Phải tạo góc nhìn toàn cảnh (Wide-angle) để khách hàng thấy được sự biến đổi của toàn bộ không gian phòng theo chiều ngang.
+5. CHẤT LƯỢNG: Ảnh photorealistic 8K, cực kỳ sắc nét. Nội thất phải chân thực, ánh sáng ấm áp, hài hòa.
+6. ĐIỂM NHẤN RIÊNG: ${variationPrompt}
+7. NGÔN NGỮ: Mô tả chi tiết các vật liệu và ý tưởng kiến tạo không gian bằng Tiếng Việt.`;
 
     const result = await generateWithRetry(ai, roomImageBase64, prompt);
-    
+
     if (result) {
       finalResults.push({
         imageUrl: result.imageUrl,
-        description: result.description || `Phương án ${i + 1}: Thiết kế ${roomType} đẳng cấp theo yêu cầu.`
+        description:
+          result.description ||
+          `Phương án ${i + 1}: Thiết kế ${roomType} đẳng cấp theo yêu cầu.`,
       });
     }
   }
@@ -103,19 +116,19 @@ export const editInteriorDesign = async (
   editPrompt: string
 ): Promise<string | null> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
-  
+
   const prompt = `CHỈNH SỬA NỘI THẤT CHI TIẾT:
-  Yêu cầu: "${editPrompt}".
-  LƯU Ý: Duy trì tỉ lệ khung hình 16:9 toàn cảnh. Đảm bảo các thay đổi vật liệu hay bố cục nhìn thật và sắc nét. Mô tả kết quả bằng Tiếng Việt.`;
+Yêu cầu: "${editPrompt}".
+LƯU Ý: Duy trì tỉ lệ khung hình 16:9 toàn cảnh. Đảm bảo các thay đổi vật liệu hay bố cục nhìn thật và sắc nét. Mô tả kết quả bằng Tiếng Việt.`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-image',
+    model: "gemini-2.5-flash-image",
     contents: {
       parts: [
         {
           inlineData: {
-            data: currentImageBase64.split(',')[1],
-            mimeType: 'image/png',
+            data: currentImageBase64.split(",")[1],
+            mimeType: "image/png",
           },
         },
         { text: prompt },
@@ -124,8 +137,8 @@ export const editInteriorDesign = async (
     config: {
       imageConfig: {
         aspectRatio: "16:9",
-      }
-    }
+      },
+    },
   });
 
   for (const part of response.candidates?.[0]?.content?.parts || []) {
