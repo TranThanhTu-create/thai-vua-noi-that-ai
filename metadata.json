@@ -1,0 +1,8 @@
+
+{
+  "name": "Thái Vua Nội Thất",
+  "description": "Visualize your future home on your own land using advanced Gemini AI. Upload a photo of your vacant land and get personalized architectural designs.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
